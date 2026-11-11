@@ -28,6 +28,12 @@
       '.ua-tv-card .card__placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 1.1em; font-weight: bold; color: #777; text-transform: uppercase; padding: 0.4em; text-align: center; }' +
       '.ua-tv-card .card__title { margin-top: 0.4em; font-size: 0.85em; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #aaa; }' +
       '.ua-tv-card .card__now { font-size: 0.75em; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e50914; margin-top: 0.15em; }' +
+      '.ua-tv-progress { height: 3px; background: #454545; margin: .25em .4em; border-radius: 3px; overflow: hidden; }' +
+      '.ua-tv-progress span { display:block; height:100%; background:#e50914; }' +
+      '.ua-tv-fav-filter { padding:.6em 1em; background:#22242b; color:#aaa; border-radius:.5em; border:2px solid transparent; }' +
+      '.ua-tv-fav-filter.active { color:#fff; background:#e50914; }' +
+      '.ua-tv-card-wrap { width:12.5em; margin:.5em; display:flex; flex-direction:column; align-items:stretch; }' +
+      '.ua-tv-card-wrap .ua-tv-card { width:100%; margin:0; } .ua-tv-favorite { text-align:right; padding:.3em .8em; color:#e50914; }' +
       '.ua-tv-card.focus .card__title { color: #fff; }' +
 
       '/* СТИЛІ ПЛЕЄРА */' +
@@ -43,6 +49,7 @@
       '.ua-player-epg { margin-top: 0.8em; border-top: 1px solid #333; padding-top: 0.7em; }' +
       '.ua-player-epg-now { display: flex; align-items: center; color: #e50914; font-size: 1em; font-weight: bold; }' +
       '.ua-player-epg-now-dot { width: 0.6em; height: 0.6em; background: #e50914; border-radius: 50%; margin-right: 0.7em; }' +
+      '.ua-player-epg-progress { height:4px; background:#444; margin-top:.45em; } .ua-player-epg-progress span { display:block; height:100%; background:#e50914; }' +
       '.ua-player-epg-next { color: #888; font-size: 0.9em; margin-top: 0.3em; padding-left: 1.3em; }' +
       '.ua-player-status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 1.4em; background: rgba(0,0,0,0.8); padding: 1em 2em; border-radius: 0.8em; display: none; }' +
       '.ua-player-seek { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 2em; font-weight: bold; background: rgba(0,0,0,0.7); padding: 0.5em 1.5em; border-radius: 0.6em; display: none; }';
@@ -284,6 +291,8 @@
       this.video = html.find('video')[0];
       this.osd = html.find('.ua-player-osd');
       this.statusBox = html.find('.ua-player-status');
+      this.retryButton = $('<div class="ua-player-status selector"></div>').text('Retry').css({ top: '62%', cursor: 'pointer' }).hide();
+      html.append(this.retryButton);
       this.seekBox = html.find('.ua-player-seek');
       this.qualityPanel = $('<div class="ua-player-quality-panel"></div>').css({ position: 'absolute', top: '50%', right: '3em', transform: 'translateY(-50%)', minWidth: '14em', padding: '1em', background: 'rgba(18,19,23,.96)', color: '#fff', borderRadius: '.8em', display: 'none', zIndex: 3 });
       html.append(this.qualityPanel);
@@ -303,7 +312,7 @@
         down: function () { if (self.qualityOpen) self.moveQuality(1); else self.next(); },
         left: function () { self.seek(-10); },
         right: function () { self.seek(10); },
-        enter: function () { if (self.qualityOpen) self.applyQuality(); else self.openQuality(); },
+        enter: function () { if (self.qualityOpen) self.applyQuality(); else if (self.retryButton && self.retryButton.is(':visible')) self.playCurrent(); else self.openQuality(); },
         back: function () { if (self.qualityOpen) self.closeQuality(); else self.close(); }
       });
       Lampa.Controller.toggle('ua_custom_player');
@@ -343,6 +352,7 @@
       var ch = this.playlist[this.currentIndex];
       if (!ch) return;
 
+      if (this.retryButton) this.retryButton.hide();
       this.showOSD();
       this.statusBox.text('Завантаження...').show();
 
@@ -352,7 +362,7 @@
       this.video.load();
 
       ensureHls(function (loadError) {
-        if (loadError) { self.statusBox.text('Не вдалося завантажити відеоплеєр. Перевірте інтернет.').show(); return; }
+        if (loadError) { self.showRetry('Could not load the player. Press Enter to retry.'); return; }
         if (window.Hls && window.Hls.isSupported()) {
           self.hls = new window.Hls({
             enableWorker: true,
@@ -373,24 +383,26 @@
             for (var q = 0; q < self.qualityItems.length; q++) if (self.qualityItems[q].level === self.quality) self.qualitySelected = q;
             self.renderQuality();
             self.video.play().then(function () { self.statusBox.hide(); }).catch(function () {
-              self.statusBox.text('Не вдалося запустити відео. Натисніть Enter для повтору.').show();
+              self.showRetry('Playback failed or channel unavailable. Press Enter to retry.');
             });
           });
           self.hls.on(window.Hls.Events.ERROR, function (event, data) {
             if (data.fatal) {
-              self.statusBox.text('Канал недоступний (▼ наступний)').show();
+              self.showRetry('Playback failed or channel unavailable. Press Enter to retry.');
             }
           });
         } else if (self.video.canPlayType('application/vnd.apple.mpegurl')) {
           self.video.src = ch.url;
           self.video.play().then(function () { self.statusBox.hide(); }).catch(function () {
-            self.statusBox.text('Не вдалося запустити відео. Натисніть Enter для повтору.').show();
+              self.showRetry('Playback failed or channel unavailable. Press Enter to retry.');
           });
         } else {
-          self.statusBox.text('Пристрій не підтримує відтворення HLS.').show();
+              self.showRetry('Playback failed or channel unavailable. Press Enter to retry.');
         }
       });
     },
+
+    showRetry: function (message) { this.statusBox.text(message).show(); if (this.retryButton) this.retryButton.show(); },
 
     showOSD: function () {
       var ch = this.playlist[this.currentIndex];
@@ -404,11 +416,15 @@
 
       var epgInfo = EPG.getNowNext(ch.tvgId);
       if (epgInfo && epgInfo.now) {
-        this.wrap.find('.ua-player-epg-now-text').text(
-            EPG.formatTime(epgInfo.now.start) + ' — ' + epgInfo.now.title
-        );
+        var program = epgInfo.now;
+        var duration = Math.max(1, program.stop - program.start);
+        var progress = Math.max(0, Math.min(100, (Date.now() - program.start) / duration * 100));
+        this.wrap.find('.ua-player-epg-now-text').text(EPG.formatTime(program.start) + ' - ' + EPG.formatTime(program.stop) + '  ' + program.title);
+        if (!this.wrap.find('.ua-player-epg-progress').length) this.wrap.find('.ua-player-epg').append('<div class="ua-player-epg-progress"><span></span></div>');
+        this.wrap.find('.ua-player-epg-progress span').css('width', progress + '%');
         this.wrap.find('.ua-player-epg').show();
       } else {
+        this.wrap.find('.ua-player-epg-progress').remove();
         this.wrap.find('.ua-player-epg-now-text').text('');
         this.wrap.find('.ua-player-epg').hide();
       }
@@ -472,6 +488,9 @@
     var categoriesBox = $('<div class="ua-tv-categories"></div>');
     var cardsBox = $('<div class="ua-tv-cards"></div>');
     var searchBox = $('<input class="ua-tv-search selector" type="text" placeholder="Пошук каналів" />');
+    var favoriteFilter = $('<div class="ua-tv-fav-filter selector"></div>').text('\u041e\u0431\u0440\u0430\u043d\u0435');
+    var onlyFavorites = false;
+    var epgTimer = null;
     var query = '';
     var favorites = {};
     try { favorites = JSON.parse(localStorage.getItem('ua_tv_favorites') || '{}'); } catch (e) {}
@@ -488,9 +507,22 @@
       var self = this;
       container.append(categoriesBox);
       container.append(searchBox);
+      container.append(favoriteFilter);
+      favoriteFilter.on('hover:enter', function () { onlyFavorites = !onlyFavorites; favoriteFilter.toggleClass('active', onlyFavorites); lastFocus = favoriteFilter[0]; self.renderCards(activeCategory); });
+      favoriteFilter.on('hover:focus', function () { lastFocus = favoriteFilter[0]; safeScrollTo(favoriteFilter); });
       container.append(cardsBox);
       searchBox.on('input', function () { query = String($(this).val() || '').toLowerCase(); self.renderCards(activeCategory); });
       searchBox.on('hover:enter', function () { this.focus(); });
+      searchBox.on('hover:focus focus', function () { lastFocus = searchBox[0]; safeScrollTo(searchBox); });
+      epgTimer = setInterval(function () {
+        cardsBox.find('.ua-tv-progress').each(function () {
+          var program = $(this).data('program');
+          if (!program) return;
+          var duration = Math.max(1, program.stop - program.start);
+          var progress = Math.max(0, Math.min(100, (Date.now() - program.start) / duration * 100));
+          $(this).find('span').css('width', progress + '%');
+        });
+      }, 60000);
       scroll.body().append(container);
       scroll.minus();
 
@@ -547,34 +579,41 @@
     };
 
     this.renderCards = function (cat) {
+      var self = this;
       cardsBox.empty();
       var filtered = [];
       for (var i = 0; i < allChannels.length; i++) {
         var channel = allChannels[i];
         var categoryMatch = cat.indexOf('\u0412\u0441\u0456') === 0 || channel.category === cat || (cat === '\u041e\u0431\u0440\u0430\u043d\u0435' && favorites[channel.url]);
-        if (categoryMatch && (!query || channel.title.toLowerCase().indexOf(query) !== -1)) filtered.push(channel);
+        if (categoryMatch && (!onlyFavorites || favorites[channel.url]) && (!query || channel.title.toLowerCase().indexOf(query) !== -1)) filtered.push(channel);
       }
       for (var k = 0; k < filtered.length; k++) {
         (function (channel, index) {
-          var nowText = '';
-          if (EPG.loaded) {
-            var epg = EPG.getNowNext(channel.tvgId);
-            if (epg && epg.now) nowText = epg.now.title;
-          }
-
+          var epg = EPG.loaded ? EPG.getNowNext(channel.tvgId) : null;
+          var wrapper = $('<div class="ua-tv-card-wrap"></div>');
           var card = $('<div class="ua-tv-card selector"></div>');
           var view = $('<div class="card__view"></div>').appendTo(card);
           if (channel.logo && /^https?:\/\//i.test(channel.logo)) $('<img class="card__img" loading="lazy" />').attr('src', channel.logo).appendTo(view);
           else $('<div class="card__placeholder"></div>').text(channel.title.substring(0, 4)).appendTo(view);
           $('<div class="card__title"></div>').text(channel.title).appendTo(card);
-          if (nowText) $('<div class="card__now"></div>').text('▶ ' + nowText).appendTo(card);
-          var favorite = $('<div class="card__now selector"></div>').text(favorites[channel.url] ? '★ Обране' : '☆ Додати в обране').appendTo(card);
+          if (epg && epg.now) {
+            var prog = epg.now;
+            var duration = Math.max(1, prog.stop - prog.start);
+            var progress = Math.max(0, Math.min(100, (Date.now() - prog.start) / duration * 100));
+            $('<div class="card__now"></div>').text(EPG.formatTime(prog.start) + ' - ' + EPG.formatTime(prog.stop) + '  ' + prog.title).appendTo(card);
+            $('<div class="ua-tv-progress"><span></span></div>').appendTo(card).data('program', prog).find('span').css('width', progress + '%');
+          } else if (epg && epg.next) $('<div class="card__now"></div>').text(EPG.formatTime(epg.next.start) + '  ' + epg.next.title).appendTo(card);
+          var favorite = $('<div class="ua-tv-favorite selector"></div>').text(favorites[channel.url] ? '\u2605' : '\u2606').attr('title', '\u0414\u043e\u0434\u0430\u0442\u0438 \u0432 \u043e\u0431\u0440\u0430\u043d\u0435');
           favorite.on('hover:enter', function () {
             favorites[channel.url] = !favorites[channel.url];
             if (!favorites[channel.url]) delete favorites[channel.url];
             try { localStorage.setItem('ua_tv_favorites', JSON.stringify(favorites)); } catch (e) {}
-            $(this).text(favorites[channel.url] ? '★ Обране' : '☆ Додати в обране');
+            $(this).text(favorites[channel.url] ? '\u2605' : '\u2606');
+            if (onlyFavorites && !favorites[channel.url]) { lastFocus = favoriteFilter[0]; self.renderCards(activeCategory); }
           });
+          favorite.on('hover:focus', function () { lastFocus = favorite[0]; safeScrollTo(favorite); });
+          wrapper.append(card, favorite);
+          cardsBox.append(wrapper);
           card.find('img').on('error', function () {
             $(this).hide();
             card.find('.card__view').append(
@@ -589,7 +628,6 @@
           });
 
           card.on('hover:focus', function () { lastFocus = card[0]; safeScrollTo(card); });
-          cardsBox.append(card);
         })(filtered[k], k);
       }
       scroll.minus();
@@ -614,7 +652,7 @@
     this.pause = function () {};
     this.stop = function () {};
     this.render = function () { return scroll.render(); };
-    this.destroy = function () { scroll.destroy(); container.remove(); };
+    this.destroy = function () { if (epgTimer) clearInterval(epgTimer); scroll.destroy(); container.remove(); };
   }
 
   Lampa.Component.add('ua_tv_view', UATVComponent);
