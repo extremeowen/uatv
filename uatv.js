@@ -5,21 +5,11 @@
   var EPG_URL = 'https://iptv-org.github.io/epg/guides/ua.xml';
 
   var CATEGORY_MAP = {
-    'general': 'Загальні',
-    'news': 'Новини',
-    'entertainment': 'Розважальні',
-    'movies': 'Фільми',
-    'series': 'Серіали',
-    'kids': 'Дитячі',
-    'animation': 'Дитячі',
-    'sports': 'Спорт',
-    'documentary': 'Пізнавальні',
-    'education': 'Пізнавальні',
-    'music': 'Музика',
-    'culture': 'Культура',
-    'religious': 'Релігійні',
-    'business': 'Бізнес',
-    'lifestyle': 'Стиль життя'
+    general: 'Загальні', news: 'Новини', entertainment: 'Розважальні',
+    movies: 'Фільми', series: 'Серіали', kids: 'Дитячі', animation: 'Дитячі',
+    sports: 'Спорт', documentary: 'Пізнавальні', education: 'Пізнавальні',
+    music: 'Музика', culture: 'Культура', religious: 'Релігійні',
+    business: 'Бізнес', lifestyle: 'Стиль життя'
   };
 
   var css = '' +
@@ -260,7 +250,7 @@
   // ================= ВЛАСНИЙ ПЛЕЄР =================
   var CustomPlayer = {
     wrap: null, video: null, osd: null, statusBox: null, seekBox: null,
-    hls: null, playlist: [], currentIndex: 0, osdTimeout: null, seekTimeout: null, quality: -1,
+    hls: null, playlist: [], currentIndex: 0, osdTimeout: null, seekTimeout: null, quality: -1, qualityOpen: false, qualityItems: [], qualitySelected: 0,
 
     init: function () {
       if (this.wrap) return;
@@ -295,15 +285,8 @@
       this.osd = html.find('.ua-player-osd');
       this.statusBox = html.find('.ua-player-status');
       this.seekBox = html.find('.ua-player-seek');
-      var player = this;
-      var qualitySelect = $('<select class="ua-player-quality"><option value="-1">Якість: авто</option></select>');
-      qualitySelect.css({ position: 'absolute', top: '1em', right: '1em', zIndex: 2, padding: '.6em', background: '#222', color: '#fff' });
-      html.append(qualitySelect);
-      qualitySelect.on('change', function () {
-        var level = parseInt($(this).val(), 10);
-        player.quality = level;
-        if (player.hls) player.hls.currentLevel = level;
-      });
+      this.qualityPanel = $('<div class="ua-player-quality-panel"></div>').css({ position: 'absolute', top: '50%', right: '3em', transform: 'translateY(-50%)', minWidth: '14em', padding: '1em', background: 'rgba(18,19,23,.96)', color: '#fff', borderRadius: '.8em', display: 'none', zIndex: 3 });
+      html.append(this.qualityPanel);
     },
 
     open: function (list, index) {
@@ -316,15 +299,44 @@
       var self = this;
       Lampa.Controller.add('ua_custom_player', {
         toggle: function () {},
-        up: function () { self.prev(); },
-        down: function () { self.next(); },
+        up: function () { if (self.qualityOpen) self.moveQuality(-1); else self.prev(); },
+        down: function () { if (self.qualityOpen) self.moveQuality(1); else self.next(); },
         left: function () { self.seek(-10); },
         right: function () { self.seek(10); },
-        enter: function () { self.showOSD(); },
-        back: function () { self.close(); }
+        enter: function () { if (self.qualityOpen) self.applyQuality(); else self.openQuality(); },
+        back: function () { if (self.qualityOpen) self.closeQuality(); else self.close(); }
       });
       Lampa.Controller.toggle('ua_custom_player');
     },
+
+    renderQuality: function () {
+      if (!this.qualityPanel) return;
+      var self = this;
+      this.qualityPanel.empty().append($('<div></div>').text('Video quality').css({ fontWeight: 'bold', marginBottom: '.6em' }));
+      this.qualityItems.forEach(function (item, index) {
+        var row = $('<div></div>').text((index === self.qualitySelected ? '>  ' : '   ') + item.label).css({ padding: '.55em', borderRadius: '.35em' });
+        if (index === self.qualitySelected) row.css({ background: '#e50914', color: '#fff' });
+        self.qualityPanel.append(row);
+      });
+    },
+    openQuality: function () {
+      this.showOSD();
+      this.qualityOpen = true;
+      if (!this.qualityItems.length) this.qualityItems = [{ level: -1, label: 'Auto' }];
+      this.renderQuality();
+      this.qualityPanel.show();
+    },
+    moveQuality: function (delta) {
+      this.qualitySelected = (this.qualitySelected + delta + this.qualityItems.length) % this.qualityItems.length;
+      this.renderQuality();
+    },
+    applyQuality: function () {
+      this.quality = this.qualityItems[this.qualitySelected].level;
+      if (this.hls) this.hls.currentLevel = this.quality;
+      this.closeQuality();
+      this.showOSD();
+    },
+    closeQuality: function () { this.qualityOpen = false; if (this.qualityPanel) this.qualityPanel.hide(); },
 
     playCurrent: function () {
       var self = this;
@@ -352,14 +364,14 @@
           self.hls.loadSource(ch.url);
           self.hls.attachMedia(self.video);
           self.hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
-            var qualitySelect = self.wrap.find('.ua-player-quality').empty();
-            qualitySelect.append($('<option>').val(-1).text('Якість: авто'));
+            self.qualityItems = [{ level: -1, label: 'Auto' }];
             for (var level = 0; level < self.hls.levels.length; level++) {
               var info = self.hls.levels[level];
-              var label = info.height ? info.height + 'p' : Math.round(info.bitrate / 1000) + ' kbps';
-              qualitySelect.append($('<option>').val(level).text(label));
+              self.qualityItems.push({ level: level, label: info.height ? info.height + 'p' : Math.round(info.bitrate / 1000) + ' kbps' });
             }
-            qualitySelect.val(String(self.quality));
+            self.qualitySelected = 0;
+            for (var q = 0; q < self.qualityItems.length; q++) if (self.qualityItems[q].level === self.quality) self.qualitySelected = q;
+            self.renderQuality();
             self.video.play().then(function () { self.statusBox.hide(); }).catch(function () {
               self.statusBox.text('Не вдалося запустити відео. Натисніть Enter для повтору.').show();
             });
@@ -511,8 +523,8 @@
       for (var i = 0; i < allChannels.length; i++) {
         if (allChannels[i].category) catMap[allChannels[i].category] = true;
       }
-      var categories = ['??? (' + allChannels.length + ')', '??????', '????????'];
-      for (var k in catMap) { if (k !== '????????' && catMap.hasOwnProperty(k)) categories.push(k); }
+      var categories = ['Всі (' + allChannels.length + ')', 'Обране', 'Загальні'];
+      for (var k in catMap) { if (k !== 'Загальні' && catMap.hasOwnProperty(k)) categories.push(k); }
       categoriesBox.empty();
       for (var j = 0; j < categories.length; j++) {
         (function (cat) {
@@ -539,7 +551,7 @@
       var filtered = [];
       for (var i = 0; i < allChannels.length; i++) {
         var channel = allChannels[i];
-        var categoryMatch = cat.indexOf('???') === 0 || channel.category === cat || (cat === '??????' && favorites[channel.url]);
+        var categoryMatch = cat.indexOf('\u0412\u0441\u0456') === 0 || channel.category === cat || (cat === '\u041e\u0431\u0440\u0430\u043d\u0435' && favorites[channel.url]);
         if (categoryMatch && (!query || channel.title.toLowerCase().indexOf(query) !== -1)) filtered.push(channel);
       }
       for (var k = 0; k < filtered.length; k++) {
