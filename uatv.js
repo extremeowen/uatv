@@ -24,6 +24,8 @@
 
   var css = '' +
       '.ua-tv-container { padding: 1em 1.5em 5em 1.5em; }' +
+      '.ua-tv-tools { display:flex; gap:.6em; margin:.4em .3em 1em; }' +
+      '.ua-tv-search,.ua-tv-quality { background:#22242b;color:#fff;border:1px solid #555;border-radius:.5em;padding:.7em;font-size:1em; }' +
       '.ua-tv-categories { display: flex; flex-wrap: wrap; margin-bottom: 1.2em; }' +
       '.ua-tv-category-btn { padding: 0.5em 1.2em; margin: 0.3em; background: #22242b; border-radius: 2em; font-size: 0.95em; color: #999; cursor: pointer; border: 2px solid transparent; white-space: nowrap; }' +
       '.ua-tv-category-btn.active { background: #e50914; color: #fff; font-weight: bold; }' +
@@ -74,6 +76,7 @@
               try {
                 self.parse(text);
                 self.loaded = true;
+                if (self.onLoaded) self.onLoaded();
               } catch (e) {}
             },
             function () {},
@@ -178,9 +181,22 @@
 
   function ensureHls(callback) {
     if (window.Hls) return callback();
+    if (window.uaTvHlsLoading) {
+      window.uaTvHlsCallbacks.push(callback);
+      return;
+    }
+    window.uaTvHlsLoading = true;
+    window.uaTvHlsCallbacks = [callback];
     var script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest';
-    script.onload = callback;
+    script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js';
+    script.onload = function () {
+      window.uaTvHlsLoading = false;
+      window.uaTvHlsCallbacks.splice(0).forEach(function (done) { done(null); });
+    };
+    script.onerror = function () {
+      window.uaTvHlsLoading = false;
+      window.uaTvHlsCallbacks.splice(0).forEach(function (done) { done(new Error('HLS library failed')); });
+    };
     document.head.appendChild(script);
   }
 
@@ -192,7 +208,7 @@
   }
 
   function parseM3U(text) {
-    var lines = text.split('\n');
+    var lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
     var list = [];
     var currentItem = null;
 
@@ -219,7 +235,7 @@
           logo: logo,
           tvgId: tvgId
         };
-      } else if (line.indexOf('http') === 0 && currentItem) {
+      } else if (/^https?:\/\//i.test(line) && currentItem) {
         currentItem.url = line;
         list.push(currentItem);
         currentItem = null;
@@ -230,7 +246,7 @@
     var unique = [];
     for (var j = 0; j < list.length; j++) {
       var item = list[j];
-      var key = item.title.toLowerCase().replace(/[^a-zа-яіїєґ0-9]/gi, '');
+      var key = (item.tvgId || item.url).toLowerCase();
       if (!map[key]) {
         map[key] = true;
         unique.push(item);
@@ -244,7 +260,7 @@
   // ================= ВЛАСНИЙ ПЛЕЄР =================
   var CustomPlayer = {
     wrap: null, video: null, osd: null, statusBox: null, seekBox: null,
-    hls: null, playlist: [], currentIndex: 0, osdTimeout: null, seekTimeout: null,
+    hls: null, playlist: [], currentIndex: 0, osdTimeout: null, seekTimeout: null, quality: -1,
 
     init: function () {
       if (this.wrap) return;
@@ -279,6 +295,15 @@
       this.osd = html.find('.ua-player-osd');
       this.statusBox = html.find('.ua-player-status');
       this.seekBox = html.find('.ua-player-seek');
+      var player = this;
+      var qualitySelect = $('<select class="ua-player-quality"><option value="-1">Якість: авто</option></select>');
+      qualitySelect.css({ position: 'absolute', top: '1em', right: '1em', zIndex: 2, padding: '.6em', background: '#222', color: '#fff' });
+      html.append(qualitySelect);
+      qualitySelect.on('change', function () {
+        var level = parseInt($(this).val(), 10);
+        player.quality = level;
+        if (player.hls) player.hls.currentLevel = level;
+      });
     },
 
     open: function (list, index) {
@@ -314,19 +339,30 @@
       this.video.removeAttribute('src');
       this.video.load();
 
-      ensureHls(function () {
+      ensureHls(function (loadError) {
+        if (loadError) { self.statusBox.text('Не вдалося завантажити відеоплеєр. Перевірте інтернет.').show(); return; }
         if (window.Hls && window.Hls.isSupported()) {
           self.hls = new window.Hls({
             enableWorker: true,
             lowLatencyMode: true,
             liveDurationInfinity: true,
-            liveBackBufferLength: 120
+            liveBackBufferLength: 120,
+            startLevel: self.quality
           });
           self.hls.loadSource(ch.url);
           self.hls.attachMedia(self.video);
           self.hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
-            self.video.play().catch(function () {});
-            self.statusBox.hide();
+            var qualitySelect = self.wrap.find('.ua-player-quality').empty();
+            qualitySelect.append($('<option>').val(-1).text('Якість: авто'));
+            for (var level = 0; level < self.hls.levels.length; level++) {
+              var info = self.hls.levels[level];
+              var label = info.height ? info.height + 'p' : Math.round(info.bitrate / 1000) + ' kbps';
+              qualitySelect.append($('<option>').val(level).text(label));
+            }
+            qualitySelect.val(String(self.quality));
+            self.video.play().then(function () { self.statusBox.hide(); }).catch(function () {
+              self.statusBox.text('Не вдалося запустити відео. Натисніть Enter для повтору.').show();
+            });
           });
           self.hls.on(window.Hls.Events.ERROR, function (event, data) {
             if (data.fatal) {
@@ -335,8 +371,11 @@
           });
         } else if (self.video.canPlayType('application/vnd.apple.mpegurl')) {
           self.video.src = ch.url;
-          self.video.play().catch(function () {});
-          self.statusBox.hide();
+          self.video.play().then(function () { self.statusBox.hide(); }).catch(function () {
+            self.statusBox.text('Не вдалося запустити відео. Натисніть Enter для повтору.').show();
+          });
+        } else {
+          self.statusBox.text('Пристрій не підтримує відтворення HLS.').show();
         }
       });
     },
@@ -420,6 +459,10 @@
     var container = $('<div class="ua-tv-container"></div>');
     var categoriesBox = $('<div class="ua-tv-categories"></div>');
     var cardsBox = $('<div class="ua-tv-cards"></div>');
+    var searchBox = $('<input class="ua-tv-search selector" type="text" placeholder="Пошук каналів" />');
+    var query = '';
+    var favorites = {};
+    try { favorites = JSON.parse(localStorage.getItem('ua_tv_favorites') || '{}'); } catch (e) {}
     var allChannels = [];
     var activeCategory = 'Всі';
     var lastFocus = false;
@@ -432,11 +475,15 @@
     this.create = function () {
       var self = this;
       container.append(categoriesBox);
+      container.append(searchBox);
       container.append(cardsBox);
+      searchBox.on('input', function () { query = String($(this).val() || '').toLowerCase(); self.renderCards(activeCategory); });
+      searchBox.on('hover:enter', function () { this.focus(); });
       scroll.body().append(container);
       scroll.minus();
 
       EPG.load();
+      EPG.onLoaded = function () { self.renderCards(activeCategory); };
 
       Lampa.Loading.start(function () { Lampa.Activity.backward(); });
 
@@ -464,14 +511,12 @@
       for (var i = 0; i < allChannels.length; i++) {
         if (allChannels[i].category) catMap[allChannels[i].category] = true;
       }
-      var categories = ['Всі (' + allChannels.length + ')', 'Загальні'];
-      for (var k in catMap) {
-        if (k !== 'Загальні' && catMap.hasOwnProperty(k)) categories.push(k);
-      }
+      var categories = ['??? (' + allChannels.length + ')', '??????', '????????'];
+      for (var k in catMap) { if (k !== '????????' && catMap.hasOwnProperty(k)) categories.push(k); }
       categoriesBox.empty();
       for (var j = 0; j < categories.length; j++) {
         (function (cat) {
-          var btn = $('<div class="ua-tv-category-btn selector">' + cat + '</div>');
+          var btn = $('<div class="ua-tv-category-btn selector"></div>').text(cat);
           var isAll = (cat.indexOf('Всі') === 0);
           if ((isAll && activeCategory === 'Всі') || activeCategory === cat) btn.addClass('active');
           btn.on('hover:enter', function () {
@@ -493,10 +538,10 @@
       cardsBox.empty();
       var filtered = [];
       for (var i = 0; i < allChannels.length; i++) {
-        if (cat === 'Всі' || allChannels[i].category === cat) filtered.push(allChannels[i]);
+        var channel = allChannels[i];
+        var categoryMatch = cat.indexOf('???') === 0 || channel.category === cat || (cat === '??????' && favorites[channel.url]);
+        if (categoryMatch && (!query || channel.title.toLowerCase().indexOf(query) !== -1)) filtered.push(channel);
       }
-      if (!filtered.length) filtered = allChannels;
-
       for (var k = 0; k < filtered.length; k++) {
         (function (channel, index) {
           var nowText = '';
@@ -505,22 +550,23 @@
             if (epg && epg.now) nowText = epg.now.title;
           }
 
-          var card = $(
-              '<div class="ua-tv-card selector">' +
-              '<div class="card__view">' +
-              (channel.logo
-                  ? '<img class="card__img" src="' + channel.logo + '" loading="lazy" />'
-                  : '<div class="card__placeholder">' + channel.title.substring(0, 4) + '</div>') +
-              '</div>' +
-              '<div class="card__title">' + channel.title + '</div>' +
-              (nowText ? '<div class="card__now">▶ ' + nowText + '</div>' : '') +
-              '</div>'
-          );
-
+          var card = $('<div class="ua-tv-card selector"></div>');
+          var view = $('<div class="card__view"></div>').appendTo(card);
+          if (channel.logo && /^https?:\/\//i.test(channel.logo)) $('<img class="card__img" loading="lazy" />').attr('src', channel.logo).appendTo(view);
+          else $('<div class="card__placeholder"></div>').text(channel.title.substring(0, 4)).appendTo(view);
+          $('<div class="card__title"></div>').text(channel.title).appendTo(card);
+          if (nowText) $('<div class="card__now"></div>').text('▶ ' + nowText).appendTo(card);
+          var favorite = $('<div class="card__now selector"></div>').text(favorites[channel.url] ? '★ Обране' : '☆ Додати в обране').appendTo(card);
+          favorite.on('hover:enter', function () {
+            favorites[channel.url] = !favorites[channel.url];
+            if (!favorites[channel.url]) delete favorites[channel.url];
+            try { localStorage.setItem('ua_tv_favorites', JSON.stringify(favorites)); } catch (e) {}
+            $(this).text(favorites[channel.url] ? '★ Обране' : '☆ Додати в обране');
+          });
           card.find('img').on('error', function () {
             $(this).hide();
             card.find('.card__view').append(
-                '<div class="card__placeholder">' + channel.title.substring(0, 4) + '</div>'
+              $('<div class="card__placeholder"></div>').text(channel.title.substring(0, 4))
             );
           });
 
