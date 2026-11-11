@@ -5,11 +5,11 @@
   var EPG_URL = 'https://iptv-org.github.io/epg/guides/ua.xml';
 
   var CATEGORY_MAP = {
-    general: 'Ð—Ð°Ð³Ð°Ð»ÑŒÐ½Ñ–', news: 'ÐÐ¾Ð²Ð¸Ð½Ð¸', entertainment: 'Ð Ð¾Ð·Ð²Ð°Ð¶Ð°Ð»ÑŒÐ½Ñ–',
-    movies: 'Ð¤Ñ–Ð»ÑŒÐ¼Ð¸', series: 'Ð¡ÐµÑ€Ñ–Ð°Ð»Ð¸', kids: 'Ð”Ð¸Ñ‚ÑÑ‡Ñ–', animation: 'Ð”Ð¸Ñ‚ÑÑ‡Ñ–',
-    sports: 'Ð¡Ð¿Ð¾Ñ€Ñ‚', documentary: 'ÐŸÑ–Ð·Ð½Ð°Ð²Ð°Ð»ÑŒÐ½Ñ–', education: 'ÐŸÑ–Ð·Ð½Ð°Ð²Ð°Ð»ÑŒÐ½Ñ–',
-    music: 'ÐœÑƒÐ·Ð¸ÐºÐ°', culture: 'ÐšÑƒÐ»ÑŒÑ‚ÑƒÑ€Ð°', religious: 'Ð ÐµÐ»Ñ–Ð³Ñ–Ð¹Ð½Ñ–',
-    business: 'Ð‘Ñ–Ð·Ð½ÐµÑ', lifestyle: 'Ð¡Ñ‚Ð¸Ð»ÑŒ Ð¶Ð¸Ñ‚Ñ‚Ñ'
+    general: 'Загальні', news: 'Новини', entertainment: 'Розважальні',
+    movies: 'Фільми', series: 'Серіали', kids: 'Дитячі', animation: 'Дитячі',
+    sports: 'Спорт', documentary: 'Пізнавальні', education: 'Пізнавальні',
+    music: 'Музика', culture: 'Культура', religious: 'Релігійні',
+    business: 'Бізнес', lifestyle: 'Стиль життя'
   };
 
   var css = '' +
@@ -38,7 +38,7 @@
       '.ua-tv-favorite.focus { outline:2px solid #fff; color:#fff; }' +
       '.ua-tv-card.focus .card__title { color: #fff; }' +
 
-      '/* Ð¡Ð¢Ð˜Ð›Ð† ÐŸÐ›Ð•Ð„Ð Ð */' +
+      '/* СТИЛІ ПЛЕЄРА */' +
       '.ua-player-wrap { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 10000; display: none; }' +
       '.ua-player-video { width: 100%; height: 100%; object-fit: contain; }' +
       '.ua-player-osd { position: absolute; bottom: 3em; left: 3em; right: 3em; background: rgba(18, 19, 23, 0.92); padding: 1.2em 2em; border-radius: 1em; border-left: 6px solid #e50914; transition: opacity 0.4s ease; }' +
@@ -60,7 +60,7 @@
     $('head').append('<style id="ua-tv-styles">' + css + '</style>');
   }
 
-  // ================= EPG (Ð¢ÐµÐ»ÐµÐ¿Ñ€Ð¾Ð³Ñ€Ð°Ð¼Ð°) =================
+  // ================= EPG (Телепрограма) =================
   var EPG = {
     data: {},
     loaded: false,
@@ -200,7 +200,7 @@
   }
 
   function translateCategory(raw) {
-    if (!raw) return 'Ð Ñ–Ð·Ð½Ðµ';
+    if (!raw) return 'Різне';
     var firstPart = raw.split(';')[0].split(',')[0].trim();
     var lower = firstPart.toLowerCase();
     return CATEGORY_MAP[lower] || firstPart;
@@ -217,7 +217,7 @@
 
       if (line.indexOf('#EXTINF:') === 0) {
         var nameMatch = line.split(',');
-        var title = nameMatch.length > 1 ? nameMatch.pop().trim() : 'Ð‘ÐµÐ· Ð½Ð°Ð·Ð²Ð¸';
+        var title = nameMatch.length > 1 ? nameMatch.pop().trim() : 'Без назви';
 
         var logoMatch = line.match(/tvg-logo="([^"]+)"/i);
         var logo = logoMatch ? logoMatch[1] : '';
@@ -256,7 +256,7 @@
     return unique;
   }
 
-  // ================= Ð’Ð›ÐÐ¡ÐÐ˜Ð™ ÐŸÐ›Ð•Ð„Ð  =================
+  // ================= ВЛАСНИЙ ПЛЕЄР =================
   var CustomPlayer = {
     wrap: null, video: null, osd: null, statusBox: null, seekBox: null,
     hls: null, playlist: [], currentIndex: 0, osdTimeout: null, seekTimeout: null, quality: -1, qualityOpen: false, qualityItems: [], qualitySelected: 0,
@@ -267,7 +267,7 @@
       var html = $(
           '<div class="ua-player-wrap">' +
           '<video class="ua-player-video" autoplay playsinline></video>' +
-          '<div class="ua-player-status">Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÐµÐ½Ð½Ñ...</div>' +
+          '<div class="ua-player-status">Завантаження...</div>' +
           '<div class="ua-player-seek"></div>' +
           '<div class="ua-player-osd">' +
           '<div class="ua-player-osd-top">' +
@@ -278,7 +278,7 @@
           '<div class="ua-player-info-cat"></div>' +
           '</div>' +
           '</div>' +
-          '<div class="ua-player-hint">â–²â–¼ ÐšÐ°Ð½Ð°Ð»Ð¸ &nbsp; â—„â–º Â±10ÑÐµÐº<br>â—„ ÐÐ°Ð·Ð°Ð´ â€” Ð²Ð¸Ñ…Ñ–Ð´</div>' +
+          '<div class="ua-player-hint">▲▼ Канали &nbsp; ◄► ±10сек<br>◄ Назад — вихід</div>' +
           '</div>' +
           '<div class="ua-player-epg">' +
           '<div class="ua-player-epg-now"><div class="ua-player-epg-now-dot"></div><span class="ua-player-epg-now-text"></span></div>' +
@@ -356,7 +356,7 @@
 
       if (this.retryButton) this.retryButton.hide();
       this.showOSD();
-      this.statusBox.text('Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÐµÐ½Ð½Ñ...').show();
+      this.statusBox.text('Завантаження...').show();
 
       if (this.hls) { this.hls.destroy(); this.hls = null; }
       this.video.pause();
@@ -414,7 +414,7 @@
       if (ch.logo) { logo.attr('src', ch.logo).show(); } else { logo.hide(); }
 
       this.wrap.find('.ua-player-info-title').text((this.currentIndex + 1) + '. ' + ch.title);
-      this.wrap.find('.ua-player-info-cat').text(ch.category || 'Ð¢Ð‘');
+      this.wrap.find('.ua-player-info-cat').text(ch.category || 'ТБ');
 
       var epgInfo = EPG.getNowNext(ch.tvgId);
       if (epgInfo && epgInfo.now) {
@@ -433,7 +433,7 @@
 
       if (epgInfo && epgInfo.next) {
         this.wrap.find('.ua-player-epg-next').text(
-            'Ð”Ð°Ð»Ñ–: ' + EPG.formatTime(epgInfo.next.start) + ' â€” ' + epgInfo.next.title
+            'Далі: ' + EPG.formatTime(epgInfo.next.start) + ' — ' + epgInfo.next.title
         ).show();
       } else {
         this.wrap.find('.ua-player-epg-next').hide();
@@ -459,7 +459,7 @@
         }
 
         v.currentTime = newTime;
-        this.seekBox.text(seconds > 0 ? 'â–¶â–¶ +' + seconds + 'ÑÐµÐº' : 'â—€â—€ ' + seconds + 'ÑÐµÐº').show();
+        this.seekBox.text(seconds > 0 ? '▶▶ +' + seconds + 'сек' : '◀◀ ' + seconds + 'сек').show();
         clearTimeout(this.seekTimeout);
         var self = this;
         this.seekTimeout = setTimeout(function () { self.seekBox.hide(); }, 1200);
@@ -483,13 +483,13 @@
     }
   };
 
-  // ================= ÐšÐžÐœÐŸÐžÐÐ•ÐÐ¢ Ð’Ð†Ð”ÐžÐ‘Ð ÐÐ–Ð•ÐÐÐ¯ =================
+  // ================= КОМПОНЕНТ ВІДОБРАЖЕННЯ =================
   function UATVComponent() {
     var scroll = new Lampa.Scroll({ mask: true, over: true, step: 250 });
     var container = $('<div class="ua-tv-container"></div>');
     var categoriesBox = $('<div class="ua-tv-categories"></div>');
     var cardsBox = $('<div class="ua-tv-cards"></div>');
-    var searchBox = $('<input class="ua-tv-search selector" type="text" placeholder="ÐŸÐ¾ÑˆÑƒÐº ÐºÐ°Ð½Ð°Ð»Ñ–Ð²" />');
+    var searchBox = $('<input class="ua-tv-search selector" type="text" placeholder="Пошук каналів" />');
     var favoriteFilter = $('<div class="ua-tv-fav-filter selector"></div>').text('\u041e\u0431\u0440\u0430\u043d\u0435');
     var onlyFavorites = false;
     var epgTimer = null;
@@ -497,7 +497,7 @@
     var favorites = {};
     try { favorites = JSON.parse(localStorage.getItem('ua_tv_favorites') || '{}'); } catch (e) {}
     var allChannels = [];
-    var activeCategory = 'Ð’ÑÑ–';
+    var activeCategory = 'Всі';
     var lastFocus = false;
     var Nav = window.Navigator || (window.Lampa && window.Lampa.Navigator);
 
@@ -538,14 +538,14 @@
         Lampa.Loading.stop();
         try {
           allChannels = parseM3U(text);
-          if (!allChannels.length) { Lampa.Noty.show('Ð¡Ð¿Ð¸ÑÐ¾Ðº Ð¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¹'); return; }
+          if (!allChannels.length) { Lampa.Noty.show('Список порожній'); return; }
           self.buildCategories();
-          self.renderCards('Ð’ÑÑ–');
+          self.renderCards('Всі');
           self.start();
-        } catch (e) { Lampa.Noty.show('ÐŸÐ¾Ð¼Ð¸Ð»ÐºÐ° Ð¾Ð±Ñ€Ð¾Ð±ÐºÐ¸'); }
+        } catch (e) { Lampa.Noty.show('Помилка обробки'); }
       }, function () {
         Lampa.Loading.stop();
-        Lampa.Noty.show('ÐŸÐ¾Ð¼Ð¸Ð»ÐºÐ° Ð·Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÐµÐ½Ð½Ñ');
+        Lampa.Noty.show('Помилка завантаження');
       }, false, { dataType: 'text' });
 
       return scroll.render();
@@ -557,16 +557,16 @@
       for (var i = 0; i < allChannels.length; i++) {
         if (allChannels[i].category) catMap[allChannels[i].category] = true;
       }
-      var categories = ['Ð’ÑÑ– (' + allChannels.length + ')', 'ÐžÐ±Ñ€Ð°Ð½Ðµ', 'Ð—Ð°Ð³Ð°Ð»ÑŒÐ½Ñ–'];
-      for (var k in catMap) { if (k !== 'Ð—Ð°Ð³Ð°Ð»ÑŒÐ½Ñ–' && catMap.hasOwnProperty(k)) categories.push(k); }
+      var categories = ['Всі (' + allChannels.length + ')', 'Обране', 'Загальні'];
+      for (var k in catMap) { if (k !== 'Загальні' && catMap.hasOwnProperty(k)) categories.push(k); }
       categoriesBox.empty();
       for (var j = 0; j < categories.length; j++) {
         (function (cat) {
           var btn = $('<div class="ua-tv-category-btn selector"></div>').text(cat);
-          var isAll = (cat.indexOf('Ð’ÑÑ–') === 0);
-          if ((isAll && activeCategory === 'Ð’ÑÑ–') || activeCategory === cat) btn.addClass('active');
+          var isAll = (cat.indexOf('Всі') === 0);
+          if ((isAll && activeCategory === 'Всі') || activeCategory === cat) btn.addClass('active');
           btn.on('hover:enter', function () {
-            var sel = isAll ? 'Ð’ÑÑ–' : cat;
+            var sel = isAll ? 'Всі' : cat;
             if (activeCategory === sel) return;
             activeCategory = sel;
             categoriesBox.find('.ua-tv-category-btn').removeClass('active');
@@ -624,7 +624,7 @@
             );
           });
 
-          // ÐšÐ»Ñ–Ðº Ð¿Ð¾ ÐºÐ°Ñ€Ñ‚Ñ†Ñ–: Ð²Ñ–Ð´ÐºÑ€Ð¸Ñ‚Ñ‚Ñ Ð²Ð»Ð°ÑÐ½Ð¾Ð³Ð¾ Ð¿Ð»ÐµÑ”Ñ€Ð°
+          // Клік по картці: відкриття власного плеєра
           card.on('hover:enter', function () {
             lastFocus = card[0];
             CustomPlayer.open(filtered, index);
@@ -669,11 +669,11 @@
     var btn = $(
         '<li class="menu__item selector">' +
         '<div class="menu__ico">' + icon + '</div>' +
-        '<div class="menu__text">UA Ð¢Ð‘</div>' +
+        '<div class="menu__text">UA ТБ</div>' +
         '</li>'
     );
     btn.on('hover:enter', function () {
-      Lampa.Activity.push({ url: '', title: 'UA Ð¢Ð‘', component: 'ua_tv_view', page: 1 });
+      Lampa.Activity.push({ url: '', title: 'UA ТБ', component: 'ua_tv_view', page: 1 });
     });
     $('.menu .menu__list').eq(0).append(btn);
   }
